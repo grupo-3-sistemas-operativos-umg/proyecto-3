@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Simulador de Planificación de Procesos — Grupo 3</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .glass { background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02)); backdrop-filter: blur(6px); }
+    .pulse-dot { width: 10px; height: 10px; border-radius: 999px; position: relative; }
+    .pulse-dot::after { content: ''; position: absolute; inset: 0; border-radius: 999px; animation: pulse 1.6s infinite; }
+    @keyframes pulse { 0% { transform: scale(1); opacity: .9 } 70% { transform: scale(2.2); opacity: 0 } 100% { opacity: 0 } }
+    .scroll-table { max-height: 220px; overflow:auto; }
+    .progress-bar { height: 12px; border-radius: 999px; background: rgba(255,255,255,0.06); }
+
+    /* Gantt styles */
+    .gantt { overflow:auto; border: 1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.01); padding: 8px; }
+    .gantt-grid { display: grid; grid-auto-rows: 36px; gap: 6px; align-items: center; }
+    .gantt-header { display: flex; gap: 4px; margin-bottom: 8px; align-items: center; }
+    .gantt-time-cell { min-width: 36px; height: 28px; display:flex; align-items:center; justify-content:center; border-radius:6px; font-size:12px; background:rgba(255,255,255,0.02); color:#cbd5e1; border:1px solid rgba(255,255,255,0.02); }
+    .gantt-row { display:flex; gap:4px; align-items:center; }
+    .gantt-proc-label { min-width: 96px; text-align:left; font-weight:600; color:#e2e8f0; }
+    .gantt-cell { min-width:36px; height:28px; border-radius:6px; border:1px dashed rgba(255,255,255,0.03); display:flex; align-items:center; justify-content:center; font-size:12px; color:transparent; background: rgba(255,255,255,0.01); }
+    .gantt-cell.filled { color: white; }
+
+    /* highlight best row in resumen */
+    .best { background: linear-gradient(90deg,#065f46,#10b981); color: white; font-weight:700; }
+
+    /* small responsiveness */
+    @media (max-width: 900px) {
+      .gantt-proc-label { min-width: 64px; font-size:12px; }
+      .gantt-time-cell, .gantt-cell { min-width:28px; height:24px; font-size:11px; }
+    }
+  </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen p-6">
+  <div class="max-w-7xl mx-auto">
+    <header class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-3xl font-extrabold">Simulador de Planificación de Procesos — Grupo 3</h1>
+        <p class="text-sm text-gray-400">FCFS • SJF • Round Robin — Cada unidad de tiempo = <span id="unitLabel">3s</span></p>
+      </div>
+      <div class="flex items-center gap-3">
+        <button id="helpBtn" class="px-3 py-2 rounded-lg glass border border-gray-700 text-sm">Ayuda</button>
+      </div>
+    </header>
+
+    <main class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Left: Form & controls -->
+      <section class="glass p-4 rounded-2xl shadow-lg">
+        <h2 class="text-lg font-semibold mb-3">Agregar proceso</h2>
+        <div class="grid grid-cols-1 gap-2">
+          <input id="nombre" placeholder="Nombre (P1)" class="p-2 rounded bg-transparent border border-gray-700" />
+          <div class="flex gap-2">
+            <input id="llegada" type="number" placeholder="Llegada (≥0)" class="p-2 rounded bg-transparent border border-gray-700 flex-1" />
+            <input id="duracion" type="number" placeholder="Duración (≥1)" class="p-2 rounded bg-transparent border border-gray-700 w-36" />
+          </div>
+          <div class="flex gap-2">
+            <button id="agregar" class="flex-1 bg-indigo-600 hover:bg-indigo-700 p-2 rounded">Añadir</button>
+            <button id="limpiar" class="bg-gray-700 p-2 rounded">Limpiar</button>
+          </div>
+        </div>
+
+        <hr class="my-4 border-gray-800" />
+
+        <h3 class="font-semibold mb-2">Configuración</h3>
+        <div class="space-y-2">
+          <select id="algoritmo" class="w-full p-2 rounded bg-transparent border border-gray-700">
+            <option value="fcfs">FCFS</option>
+            <option value="sjf">SJF (no preemptive)</option>
+            <option value="rr">Round Robin</option>
+          </select>
+
+          <input id="quantum" type="number" min="1" placeholder="Quantum (solo RR)" class="w-full p-2 rounded bg-transparent border border-gray-700 hidden" />
+
+          <div class="flex gap-2">
+            <button id="iniciar" class="flex-1 bg-green-500 hover:bg-green-600 p-2 rounded">Iniciar</button>
+            <button id="detener" class="bg-red-600 hover:bg-red-700 p-2 rounded">Detener</button>
+          </div>
+
+          <label class="flex items-center gap-2 text-sm">
+            <input id="backgroundMode" type="checkbox" class="h-4 w-4" />
+            Ejecutar en modo compacto (background mode)
+          </label>
+
+          <label class="flex items-center gap-2 text-sm">
+            <input id="autoReuse" type="checkbox" class="h-4 w-4" />
+            Reutilizar procesos para otro algoritmo al finalizar
+          </label>
+
+          <div class="text-xs text-gray-400">Cada unidad visual = 3 segundos. Modo compacto hace la vista más resumida pero respetando 3s por unidad.</div>
+        </div>
+      </section>
+
+      <!-- Middle: Process list & timeline -->
+      <section class="lg:col-span-2 glass p-4 rounded-2xl shadow-lg">
+        <div class="flex items-start justify-between gap-4">
+          <div class="w-full">
+            <h2 class="text-lg font-semibold">Procesos ingresados</h2>
+            <div class="scroll-table mt-2 border border-gray-800 rounded">
+              <table class="w-full text-left table-fixed">
+                <thead class="text-xs text-gray-400">
+                  <tr><th class="p-2">Nombre</th><th class="p-2">Llegada</th><th class="p-2">Duración</th></tr>
+                </thead>
+                <tbody id="tablaProcesos"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="w-72">
+            <h3 class="text-lg font-semibold">Ejecución</h3>
+            <div id="statusCard" class="mt-2 p-3 rounded border border-gray-800 bg-transparent text-sm">
+              <div class="flex items-center justify-between">
+                <div>
+                  <div id="estado" class="font-semibold text-gray-200">Inactivo</div>
+                  <div id="tiempoActual" class="text-xs text-gray-400">t = 0</div>
+                </div>
+                <div class="flex flex-col items-end">
+                  <div class="text-xs text-gray-400">Modo</div>
+                  <div id="modoLabel" class="font-semibold text-gray-200">Paso a paso</div>
+                </div>
+              </div>
+
+              <div class="mt-3">
+                <div class="text-xs text-gray-400">CPU:</div>
+                <div id="cpuRR" class="mt-1 text-sm text-gray-200">-</div>
+                <div class="text-xs text-gray-400 mt-2">Cola (RR):</div>
+                <div id="colaRR" class="mt-1 text-sm text-gray-200">-</div>
+              </div>
+            </div>
+
+            <div class="mt-3">
+              <h4 class="text-sm text-gray-400">Leyenda</h4>
+              <div class="flex items-center gap-2 text-xs mt-1 text-gray-300">
+                <div class="w-3 h-3 rounded" style="background:linear-gradient(90deg,#4f46e5,#06b6d4)"></div><div>En ejecución</div>
+                <div class="w-3 h-3 bg-gray-600 rounded ml-2"></div><div>Listo / Esperando</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <hr class="my-4 border-gray-800" />
+
+        <!-- Gantt / Visualization -->
+        <div id="simulacion" class="hidden">
+          <div class="mb-3">
+            <div class="flex items-center justify-between">
+              <h3 class="text-base font-semibold">Diagrama de procesos (Gantt)</h3>
+              <div class="text-xs text-gray-400">Cada celda = 1 unidad (3s)</div>
+            </div>
+          </div>
+
+          <div id="ganttContainer" class="gantt rounded p-2">
+            <!-- header time axis and rows will be inserted here -->
+          </div>
+
+          <div class="mt-4">
+            <table class="w-full text-sm text-left table-auto border-collapse border border-gray-800">
+              <thead>
+                <tr class="bg-gray-800 text-gray-400">
+                  <th class="p-2">Tiempo</th>
+                  <th class="p-2">Proceso</th>
+                  <th class="p-2">Cola (RR)</th>
+                </tr>
+              </thead>
+              <tbody id="tablaEjecucion" class="text-gray-200"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="placeHolder" class="text-center text-gray-500 mt-6">Inicia la simulación para ver la ejecución aquí.</div>
+      </section>
+
+      <!-- Bottom: Resumen (reemplaza la tabla de eficiencia) -->
+      <section class="lg:col-span-3 glass p-4 rounded-2xl shadow-lg">
+        <h2 class="text-lg font-semibold mb-3">Tabla resumen de ejecución</h2>
+        <div class="overflow-auto">
+          <table class="w-full text-left border-collapse border border-gray-800 text-sm">
+            <thead class="bg-gray-800 text-gray-400">
+              <tr>
+                <th class="p-2">Proceso</th>
+                <th class="p-2">Instante de llegada (ti)</th>
+                <th class="p-2">Tiempo en CPU (tCPU)</th>
+                <th class="p-2">Instante de finalización (tf)</th>
+                <th class="p-2">Tiempo de retorno (tr = tf − ti)</th>
+                <th class="p-2">Tiempo de espera (te = tr − tCPU)</th>
+                <th class="p-2">Índice de eficiencia (tCPU / tr)</th>
+              </tr>
+            </thead>
+            <tbody id="tablaResumen" class="text-gray-200"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <footer class="text-center text-xs text-gray-500 mt-6">Desarrollado — Simulador educativo • Cada unidad = 3s</footer>
+  </div>
