@@ -310,3 +310,82 @@
       running = false;
       stopRequested = false;
     });
+
+   
+   // ----------------- Planificadores -----------------
+    function planificarFCFS(lista) {
+      const arr = [];
+      lista.sort((a,b) => a.llegada - b.llegada);
+      let tiempo = 0;
+      while (lista.length > 0) {
+        if (lista[0].llegada > tiempo) {
+          arr.push({ time: tiempo, proceso: '-', cola: [] });
+          tiempo++;
+          continue;
+        }
+        const p = lista.shift();
+        for (let i=0;i<p.duracion;i++) {
+          arr.push({ time: tiempo, proceso: p.nombre, cola: [] });
+          tiempo++;
+        }
+      }
+      return arr;
+    }
+
+    function planificarSJF(lista) {
+      const arr = [];
+      let tiempo = 0;
+      lista.sort((a,b) => a.llegada - b.llegada);
+      while (lista.length > 0) {
+        const disponibles = lista.filter(x => x.llegada <= tiempo);
+        if (disponibles.length === 0) {
+          arr.push({ time: tiempo, proceso: '-', cola: [] });
+          tiempo++;
+          continue;
+        }
+        const elegido = disponibles.reduce((min,cur) => cur.duracion < min.duracion ? cur : min, disponibles[0]);
+        lista.splice(lista.indexOf(elegido),1);
+        for (let i=0;i<elegido.duracion;i++) {
+          arr.push({ time: tiempo, proceso: elegido.nombre, cola: [] });
+          tiempo++;
+        }
+      }
+      return arr;
+    }
+
+    function planificarRR(lista, quantum) {
+      const arr = [];
+      lista.sort((a,b) => a.llegada - b.llegada);
+      let tiempo = 0;
+      const cola = [];
+      // ensure each item has restante
+      lista.forEach(x => x.restante = x.duracion);
+      while (lista.length > 0 || cola.length > 0) {
+        while (lista.length > 0 && lista[0].llegada <= tiempo) {
+          cola.push(lista.shift());
+        }
+        if (cola.length === 0) {
+          arr.push({ time: tiempo, proceso: '-', cola: [] });
+          tiempo++;
+          continue;
+        }
+        const actual = cola.shift();
+        const ejec = Math.min(actual.restante, quantum);
+        for (let i=0;i<ejec;i++) {
+          while (lista.length > 0 && lista[0].llegada <= tiempo) {
+            cola.push(lista.shift());
+          }
+          arr.push({ time: tiempo, proceso: actual.nombre, cola: cola.map(c=>c.nombre) });
+          tiempo++;
+        }
+        actual.restante -= ejec;
+        while (lista.length > 0 && lista[0].llegada <= tiempo) {
+          cola.push(lista.shift());
+        }
+        if (actual.restante > 0) {
+          actual.llegada = tiempo;
+          cola.push(actual);
+        }
+      }
+      return arr;
+    }
