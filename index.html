@@ -1,0 +1,584 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Simulador de Planificación de Procesos — Grupo 3</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .glass { background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02)); backdrop-filter: blur(6px); }
+    .pulse-dot { width: 10px; height: 10px; border-radius: 999px; position: relative; }
+    .pulse-dot::after { content: ''; position: absolute; inset: 0; border-radius: 999px; animation: pulse 1.6s infinite; }
+    @keyframes pulse { 0% { transform: scale(1); opacity: .9 } 70% { transform: scale(2.2); opacity: 0 } 100% { opacity: 0 } }
+    .scroll-table { max-height: 220px; overflow:auto; }
+    .progress-bar { height: 12px; border-radius: 999px; background: rgba(255,255,255,0.06); }
+
+    /* Gantt styles */
+    .gantt { overflow:auto; border: 1px solid rgba(255,255,255,0.06); background: rgba(255,255,255,0.01); padding: 8px; }
+    .gantt-grid { display: grid; grid-auto-rows: 36px; gap: 6px; align-items: center; }
+    .gantt-header { display: flex; gap: 4px; margin-bottom: 8px; align-items: center; }
+    .gantt-time-cell { min-width: 36px; height: 28px; display:flex; align-items:center; justify-content:center; border-radius:6px; font-size:12px; background:rgba(255,255,255,0.02); color:#cbd5e1; border:1px solid rgba(255,255,255,0.02); }
+    .gantt-row { display:flex; gap:4px; align-items:center; }
+    .gantt-proc-label { min-width: 96px; text-align:left; font-weight:600; color:#e2e8f0; }
+    .gantt-cell { min-width:36px; height:28px; border-radius:6px; border:1px dashed rgba(255,255,255,0.03); display:flex; align-items:center; justify-content:center; font-size:12px; color:transparent; background: rgba(255,255,255,0.01); }
+    .gantt-cell.filled { color: white; }
+
+    /* highlight best row in resumen */
+    .best { background: linear-gradient(90deg,#065f46,#10b981); color: white; font-weight:700; }
+
+    /* small responsiveness */
+    @media (max-width: 900px) {
+      .gantt-proc-label { min-width: 64px; font-size:12px; }
+      .gantt-time-cell, .gantt-cell { min-width:28px; height:24px; font-size:11px; }
+    }
+  </style>
+</head>
+<body class="bg-gray-900 text-gray-100 min-h-screen p-6">
+  <div class="max-w-7xl mx-auto">
+    <header class="flex items-center justify-between mb-6">
+      <div>
+        <h1 class="text-3xl font-extrabold">Simulador de Planificación de Procesos — Grupo 3</h1>
+        <p class="text-sm text-gray-400">FCFS • SJF • Round Robin — Cada unidad de tiempo = <span id="unitLabel">3s</span></p>
+      </div>
+      <div class="flex items-center gap-3">
+        <button id="helpBtn" class="px-3 py-2 rounded-lg glass border border-gray-700 text-sm">Ayuda</button>
+      </div>
+    </header>
+
+    <main class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <!-- Left: Form & controls -->
+      <section class="glass p-4 rounded-2xl shadow-lg">
+        <h2 class="text-lg font-semibold mb-3">Agregar proceso</h2>
+        <div class="grid grid-cols-1 gap-2">
+          <input id="nombre" placeholder="Nombre (P1)" class="p-2 rounded bg-transparent border border-gray-700" />
+          <div class="flex gap-2">
+            <input id="llegada" type="number" placeholder="Llegada (≥0)" class="p-2 rounded bg-transparent border border-gray-700 flex-1" />
+            <input id="duracion" type="number" placeholder="Duración (≥1)" class="p-2 rounded bg-transparent border border-gray-700 w-36" />
+          </div>
+          <div class="flex gap-2">
+            <button id="agregar" class="flex-1 bg-indigo-600 hover:bg-indigo-700 p-2 rounded">Añadir</button>
+            <button id="limpiar" class="bg-gray-700 p-2 rounded">Limpiar</button>
+          </div>
+        </div>
+
+        <hr class="my-4 border-gray-800" />
+
+        <h3 class="font-semibold mb-2">Configuración</h3>
+        <div class="space-y-2">
+          <select id="algoritmo" class="w-full p-2 rounded bg-transparent border border-gray-700">
+            <option value="fcfs">FCFS</option>
+            <option value="sjf">SJF (no preemptive)</option>
+            <option value="rr">Round Robin</option>
+          </select>
+
+          <input id="quantum" type="number" min="1" placeholder="Quantum (solo RR)" class="w-full p-2 rounded bg-transparent border border-gray-700 hidden" />
+
+          <div class="flex gap-2">
+            <button id="iniciar" class="flex-1 bg-green-500 hover:bg-green-600 p-2 rounded">Iniciar</button>
+            <button id="detener" class="bg-red-600 hover:bg-red-700 p-2 rounded">Detener</button>
+          </div>
+
+          <label class="flex items-center gap-2 text-sm">
+            <input id="backgroundMode" type="checkbox" class="h-4 w-4" />
+            Ejecutar en modo compacto (background mode)
+          </label>
+
+          <label class="flex items-center gap-2 text-sm">
+            <input id="autoReuse" type="checkbox" class="h-4 w-4" />
+            Reutilizar procesos para otro algoritmo al finalizar
+          </label>
+
+          <div class="text-xs text-gray-400">Cada unidad visual = 3 segundos. Modo compacto hace la vista más resumida pero respetando 3s por unidad.</div>
+        </div>
+      </section>
+
+      <!-- Middle: Process list & timeline -->
+      <section class="lg:col-span-2 glass p-4 rounded-2xl shadow-lg">
+        <div class="flex items-start justify-between gap-4">
+          <div class="w-full">
+            <h2 class="text-lg font-semibold">Procesos ingresados</h2>
+            <div class="scroll-table mt-2 border border-gray-800 rounded">
+              <table class="w-full text-left table-fixed">
+                <thead class="text-xs text-gray-400">
+                  <tr><th class="p-2">Nombre</th><th class="p-2">Llegada</th><th class="p-2">Duración</th></tr>
+                </thead>
+                <tbody id="tablaProcesos"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="w-72">
+            <h3 class="text-lg font-semibold">Ejecución</h3>
+            <div id="statusCard" class="mt-2 p-3 rounded border border-gray-800 bg-transparent text-sm">
+              <div class="flex items-center justify-between">
+                <div>
+                  <div id="estado" class="font-semibold text-gray-200">Inactivo</div>
+                  <div id="tiempoActual" class="text-xs text-gray-400">t = 0</div>
+                </div>
+                <div class="flex flex-col items-end">
+                  <div class="text-xs text-gray-400">Modo</div>
+                  <div id="modoLabel" class="font-semibold text-gray-200">Paso a paso</div>
+                </div>
+              </div>
+
+              <div class="mt-3">
+                <div class="text-xs text-gray-400">CPU:</div>
+                <div id="cpuRR" class="mt-1 text-sm text-gray-200">-</div>
+                <div class="text-xs text-gray-400 mt-2">Cola (RR):</div>
+                <div id="colaRR" class="mt-1 text-sm text-gray-200">-</div>
+              </div>
+            </div>
+
+            <div class="mt-3">
+              <h4 class="text-sm text-gray-400">Leyenda</h4>
+              <div class="flex items-center gap-2 text-xs mt-1 text-gray-300">
+                <div class="w-3 h-3 rounded" style="background:linear-gradient(90deg,#4f46e5,#06b6d4)"></div><div>En ejecución</div>
+                <div class="w-3 h-3 bg-gray-600 rounded ml-2"></div><div>Listo / Esperando</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <hr class="my-4 border-gray-800" />
+
+        <!-- Gantt / Visualization -->
+        <div id="simulacion" class="hidden">
+          <div class="mb-3">
+            <div class="flex items-center justify-between">
+              <h3 class="text-base font-semibold">Diagrama de procesos (Gantt)</h3>
+              <div class="text-xs text-gray-400">Cada celda = 1 unidad (3s)</div>
+            </div>
+          </div>
+
+          <div id="ganttContainer" class="gantt rounded p-2">
+            <!-- header time axis and rows will be inserted here -->
+          </div>
+
+          <div class="mt-4">
+            <table class="w-full text-sm text-left table-auto border-collapse border border-gray-800">
+              <thead>
+                <tr class="bg-gray-800 text-gray-400">
+                  <th class="p-2">Tiempo</th>
+                  <th class="p-2">Proceso</th>
+                  <th class="p-2">Cola (RR)</th>
+                </tr>
+              </thead>
+              <tbody id="tablaEjecucion" class="text-gray-200"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="placeHolder" class="text-center text-gray-500 mt-6">Inicia la simulación para ver la ejecución aquí.</div>
+      </section>
+
+      <!-- Bottom: Resumen (reemplaza la tabla de eficiencia) -->
+      <section class="lg:col-span-3 glass p-4 rounded-2xl shadow-lg">
+        <h2 class="text-lg font-semibold mb-3">Tabla resumen de ejecución</h2>
+        <div class="overflow-auto">
+          <table class="w-full text-left border-collapse border border-gray-800 text-sm">
+            <thead class="bg-gray-800 text-gray-400">
+              <tr>
+                <th class="p-2">Proceso</th>
+                <th class="p-2">Instante de llegada (ti)</th>
+                <th class="p-2">Tiempo en CPU (tCPU)</th>
+                <th class="p-2">Instante de finalización (tf)</th>
+                <th class="p-2">Tiempo de retorno (tr = tf − ti)</th>
+                <th class="p-2">Tiempo de espera (te = tr − tCPU)</th>
+                <th class="p-2">Índice de eficiencia (tCPU / tr)</th>
+              </tr>
+            </thead>
+            <tbody id="tablaResumen" class="text-gray-200"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <footer class="text-center text-xs text-gray-500 mt-6">Desarrollado — Simulador educativo • Cada unidad = 3s</footer>
+  </div>
+  
+ <script>
+    // --- Estado ---
+    const procesos = []; // original processes as added by user
+    let schedule = []; // array of {time, proceso, cola}
+    let running = false;
+    let stopRequested = false;
+    const UNIT_MS = 3000;
+
+    // --- DOM ---
+    const tablaProcesos = document.getElementById('tablaProcesos');
+    const tablaEjecucion = document.getElementById('tablaEjecucion');
+    const tablaResumen = document.getElementById('tablaResumen');
+    const simulacionDiv = document.getElementById('simulacion');
+    const placeHolder = document.getElementById('placeHolder');
+    const estadoLabel = document.getElementById('estado');
+    const tiempoLabel = document.getElementById('tiempoActual');
+    const colaRR = document.getElementById('colaRR');
+    const cpuRR = document.getElementById('cpuRR');
+    const modoLabel = document.getElementById('modoLabel');
+    const ganttContainer = document.getElementById('ganttContainer');
+
+    // --- controles ---
+    const agregarBtn = document.getElementById('agregar');
+    const limpiarBtn = document.getElementById('limpiar');
+    const iniciarBtn = document.getElementById('iniciar');
+    const detenerBtn = document.getElementById('detener');
+    const algoritmoSelect = document.getElementById('algoritmo');
+    const quantumInput = document.getElementById('quantum');
+    const backgroundModeInput = document.getElementById('backgroundMode');
+    const autoReuseInput = document.getElementById('autoReuse');
+    const helpBtn = document.getElementById('helpBtn');
+
+   // helpers
+    function renderProcesos() {
+      tablaProcesos.innerHTML = '';
+      procesos.forEach((p, i) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td class="p-2 border-t border-gray-800">${p.nombre}</td>
+                        <td class="p-2 border-t border-gray-800">${p.llegada}</td>
+                        <td class="p-2 border-t border-gray-800">${p.duracion}</td>`;
+        tablaProcesos.appendChild(tr);
+      });
+    }
+
+    agregarBtn.addEventListener('click', () => {
+      const nombre = document.getElementById('nombre').value.trim();
+      const llegada = parseInt(document.getElementById('llegada').value, 10);
+      const duracion = parseInt(document.getElementById('duracion').value, 10);
+      if (!nombre || isNaN(llegada) || isNaN(duracion) || llegada < 0 || duracion <= 0) return alert('Datos inválidos');
+      // avoid duplicate names: add suffix if exists
+      let name = nombre;
+      let idx = 1;
+      while (procesos.some(p => p.nombre === name)) { name = nombre + '_' + idx; idx++; }
+      procesos.push({ nombre: name, llegada, duracion, restante: duracion });
+      renderProcesos();
+      document.getElementById('nombre').value = '';
+      document.getElementById('llegada').value = '';
+      document.getElementById('duracion').value = '';
+    });
+
+    limpiarBtn.addEventListener('click', () => {
+      if (running) return alert('Detén la simulación antes de limpiar.');
+      procesos.length = 0;
+      renderProcesos();
+      resetUI();
+    });
+
+    algoritmoSelect.addEventListener('change', (e) => {
+      quantumInput.classList.toggle('hidden', e.target.value !== 'rr');
+    });
+
+    helpBtn.addEventListener('click', () => {
+      alert('Instrucciones:\n1) Agrega procesos con Nombre, Llegada y Duración.\n2) Selecciona algoritmo.\n3) Si usas RR, define Quantum.\n4) Activa "Modo compacto" para vista resumida.\n5) Inicia. Cada unidad visual = 3s.');
+    });
+
+    detenerBtn.addEventListener('click', () => {
+      stopRequested = true;
+    });
+
+    iniciarBtn.addEventListener('click', async () => {
+      if (procesos.length === 0) return alert('Agrega procesos primero.');
+      if (running) return alert('Simulación en curso. Detén antes de iniciar otra.');
+      stopRequested = false;
+      running = true;
+      tablaEjecucion.innerHTML = '';
+      tablaResumen.innerHTML = '';
+      placeHolder.classList.add('hidden');
+      simulacionDiv.classList.remove('hidden');
+
+      const algoritmo = algoritmoSelect.value;
+      const quantum = parseInt(quantumInput.value, 10) || 1;
+      const compact = backgroundModeInput.checked;
+      modoLabel.textContent = compact ? 'Compacto' : 'Paso a paso';
+
+      // copiar procesos para no mutar original (pero manteniendo nombre/llegada/duracion)
+      const procCopy = procesos.map(p => ({ ...p, restante: p.duracion }));
+
+      if (algoritmo === 'fcfs') schedule = planificarFCFS(procCopy);
+      if (algoritmo === 'sjf') schedule = planificarSJF(procCopy);
+      if (algoritmo === 'rr') schedule = planificarRR(procCopy, quantum);
+
+      // crear gráfico Gantt con columnas = plan length
+      crearGantt(planToLength(schedule), procesos);
+
+      await ejecutarSimulacion(schedule, { compact });
+
+      if (!autoReuseInput.checked) {
+        // reset remaining durations to original
+        procesos.forEach(p => p.restante = p.duracion);
+      }
+
+      running = false;
+      stopRequested = false;
+    });
+
+   
+   // ----------------- Planificadores -----------------
+    function planificarFCFS(lista) {
+      const arr = [];
+      lista.sort((a,b) => a.llegada - b.llegada);
+      let tiempo = 0;
+      while (lista.length > 0) {
+        if (lista[0].llegada > tiempo) {
+          arr.push({ time: tiempo, proceso: '-', cola: [] });
+          tiempo++;
+          continue;
+        }
+        const p = lista.shift();
+        for (let i=0;i<p.duracion;i++) {
+          arr.push({ time: tiempo, proceso: p.nombre, cola: [] });
+          tiempo++;
+        }
+      }
+      return arr;
+    }
+
+    function planificarSJF(lista) {
+      const arr = [];
+      let tiempo = 0;
+      lista.sort((a,b) => a.llegada - b.llegada);
+      while (lista.length > 0) {
+        const disponibles = lista.filter(x => x.llegada <= tiempo);
+        if (disponibles.length === 0) {
+          arr.push({ time: tiempo, proceso: '-', cola: [] });
+          tiempo++;
+          continue;
+        }
+        const elegido = disponibles.reduce((min,cur) => cur.duracion < min.duracion ? cur : min, disponibles[0]);
+        lista.splice(lista.indexOf(elegido),1);
+        for (let i=0;i<elegido.duracion;i++) {
+          arr.push({ time: tiempo, proceso: elegido.nombre, cola: [] });
+          tiempo++;
+        }
+      }
+      return arr;
+    }
+
+    function planificarRR(lista, quantum) {
+      const arr = [];
+      lista.sort((a,b) => a.llegada - b.llegada);
+      let tiempo = 0;
+      const cola = [];
+      // ensure each item has restante
+      lista.forEach(x => x.restante = x.duracion);
+      while (lista.length > 0 || cola.length > 0) {
+        while (lista.length > 0 && lista[0].llegada <= tiempo) {
+          cola.push(lista.shift());
+        }
+        if (cola.length === 0) {
+          arr.push({ time: tiempo, proceso: '-', cola: [] });
+          tiempo++;
+          continue;
+        }
+        const actual = cola.shift();
+        const ejec = Math.min(actual.restante, quantum);
+        for (let i=0;i<ejec;i++) {
+          while (lista.length > 0 && lista[0].llegada <= tiempo) {
+            cola.push(lista.shift());
+          }
+          arr.push({ time: tiempo, proceso: actual.nombre, cola: cola.map(c=>c.nombre) });
+          tiempo++;
+        }
+        actual.restante -= ejec;
+        while (lista.length > 0 && lista[0].llegada <= tiempo) {
+          cola.push(lista.shift());
+        }
+        if (actual.restante > 0) {
+          actual.llegada = tiempo;
+          cola.push(actual);
+        }
+      }
+      return arr;
+    }
+ // ----------------- Gantt creation & update -----------------
+    // produce palette for processes (consistent mapping)
+    function colorFor(name) {
+      // simple hash -> color gradient
+      const colors = [
+        ['#4f46e5','#06b6d4'],
+        ['#ef4444','#f97316'],
+        ['#059669','#10b981'],
+        ['#8b5cf6','#ec4899'],
+        ['#0ea5e9','#7c3aed'],
+        ['#f59e0b','#f97316'],
+        ['#06b6d4','#3b82f6']
+      ];
+      let sum = 0;
+      for (let i=0;i<name.length;i++) sum += name.charCodeAt(i);
+      return colors[sum % colors.length];
+    }
+
+    // build empty gantt grid with columns = length
+    function crearGantt(length, procesosList) {
+      ganttContainer.innerHTML = '';
+      const header = document.createElement('div');
+      header.className = 'gantt-header';
+      // left label placeholder
+      const leftPlaceholder = document.createElement('div');
+      leftPlaceholder.style.minWidth = '96px';
+      header.appendChild(leftPlaceholder);
+      // time axis
+      const timeWrap = document.createElement('div');
+      timeWrap.style.display = 'flex';
+      timeWrap.style.gap = '4px';
+      for (let t=0;t<length;t++) {
+        const cell = document.createElement('div');
+        cell.className = 'gantt-time-cell';
+        cell.id = `time-${t}`;
+        cell.textContent = t;
+        timeWrap.appendChild(cell);
+      }
+      header.appendChild(timeWrap);
+      ganttContainer.appendChild(header);
+
+      // rows: one per process in same order as procesosList
+      const rowsWrap = document.createElement('div');
+      rowsWrap.className = 'gantt-grid';
+      procesosList.forEach(p => {
+        const row = document.createElement('div');
+        row.className = 'gantt-row';
+        const label = document.createElement('div');
+        label.className = 'gantt-proc-label';
+        label.textContent = p.nombre;
+        label.id = `label-${p.nombre}`;
+        row.appendChild(label);
+        const cellsWrap = document.createElement('div');
+        cellsWrap.style.display = 'flex';
+        cellsWrap.style.gap = '4px';
+        cellsWrap.style.flexWrap = 'nowrap';
+        for (let t=0;t<length;t++) {
+          const c = document.createElement('div');
+          c.className = 'gantt-cell';
+          c.dataset.proc = p.nombre;
+          c.dataset.time = t;
+          c.id = `gcell-${p.nombre}-${t}`;
+          cellsWrap.appendChild(c);
+        }
+        row.appendChild(cellsWrap);
+        ganttContainer.appendChild(row);
+      });
+
+      // mark idle column (not per process) is left blank; if needed you can add an 'idle' row
+    }
+
+    // helper to compute plan length (max time + 1)
+    function planToLength(plan) {
+      if (!plan || plan.length === 0) return 0;
+      const maxT = Math.max(...plan.map(s => s.time));
+      return maxT + 1;
+    }
+
+    // during run, fill Gantt cell for given process and time
+    function fillGanttCell(procName, time) {
+      const el = document.getElementById(`gcell-${procName}-${time}`);
+      if (!el) return;
+      const [c1, c2] = colorFor(procName);
+      el.style.background = `linear-gradient(90deg, ${c1}, ${c2})`;
+      el.classList.add('filled');
+    }
+
+    // ----------------- Ejecución -----------------
+    async function ejecutarSimulacion(plan, opts={ compact:false }) {
+      tablaEjecucion.innerHTML = '';
+      tablaResumen.innerHTML = '';
+      ganttContainer.scrollLeft = 0;
+
+      timelinePrepareEmptyPreview();
+
+      let lastProcessCompletion = {};
+      for (const step of plan) {
+        if (stopRequested) { estadoLabel.textContent = 'Detenido'; break; }
+        // update UI
+        tiempoLabel.textContent = `t = ${step.time}`;
+        estadoLabel.textContent = step.proceso === '-' ? 'CPU idle' : `Ejecutando ${step.proceso}`;
+
+        if (typeof cpuRR !== 'undefined') cpuRR.textContent = step.proceso === '-' ? '-' : step.proceso;
+        colaRR.textContent = (step.cola && step.cola.length>0) ? step.cola.join(', ') : '-';
+
+        // row in the timeline table
+        if (!opts.compact) {
+          const row = document.createElement('tr');
+          row.innerHTML = `<td class="p-2 border-t border-gray-800">${step.time}</td><td class="p-2 border-t border-gray-800">${step.proceso}</td><td class="p-2 border-t border-gray-800">${(step.cola||[]).join(', ')}</td>`;
+          tablaEjecucion.appendChild(row);
+        }
+
+        // update Gantt: fill cell for that process at that time
+        if (step.proceso !== '-' ) {
+          fillGanttCell(step.proceso, step.time);
+          lastProcessCompletion[step.proceso] = step.time;
+        }
+
+        // scroll gantt to keep current time visible (nice UX)
+        const timeCol = document.getElementById(`time-${step.time}`);
+        if (timeCol) {
+          timeCol.scrollIntoView({ behavior: 'smooth', inline: 'center' });
+        }
+
+        // wait 3s
+        await esperar(UNIT_MS);
+      }
+
+      if (!stopRequested) {
+        estadoLabel.textContent = 'Finalizado ✅';
+        calcularResumen(schedule);
+      }
+    }
+
+    function timelinePrepareEmptyPreview() {
+      // small placeholder if needed; currently not used
+    }
+
+    // ----------------- Resumen -----------------
+    function calcularResumen(plan) {
+      // for each original proceso, compute final time as last occurrence + 1
+      const resumen = procesos.map(p => {
+        const ocurrencias = plan.filter(s => s.proceso === p.nombre).map(s => s.time);
+        const tFinal = ocurrencias.length ? Math.max(...ocurrencias) + 1 : null; // null if never run
+        const tRetorno = tFinal !== null ? (tFinal - p.llegada) : null;
+        const tEspera = (tRetorno !== null) ? (tRetorno - p.duracion) : null;
+        const eficiencia = (tRetorno && tRetorno>0) ? (p.duracion / tRetorno) : 0;
+        return { nombre: p.nombre, llegada: p.llegada, tCPU: p.duracion, tf: tFinal, tr: tRetorno, te: tEspera, eficiencia: eficiencia };
+      });
+
+      // compute best eficiencia (max) among those with tr > 0
+      const mejores = resumen.filter(r => r.tr !== null && r.tr > 0);
+      let mejorVal = 0;
+      if (mejores.length > 0) {
+        mejorVal = Math.max(...mejores.map(r => r.eficiencia));
+      }
+
+      tablaResumen.innerHTML = '';
+      resumen.forEach(r => {
+        const tr = document.createElement('tr');
+        if (r.eficiencia === mejorVal && mejorVal > 0) tr.className = 'best';
+        tr.innerHTML = `<td class="p-2 border-t border-gray-800">${r.nombre}</td>
+                        <td class="p-2 border-t border-gray-800">${r.llegada}</td>
+                        <td class="p-2 border-t border-gray-800">${r.tCPU}</td>
+                        <td class="p-2 border-t border-gray-800">${r.tf === null ? '-' : r.tf}</td>
+                        <td class="p-2 border-t border-gray-800">${r.tr === null ? '-' : r.tr}</td>
+                        <td class="p-2 border-t border-gray-800">${r.te === null ? '-' : r.te}</td>
+                        <td class="p-2 border-t border-gray-800">${r.tr ? (r.eficiencia.toFixed(2)) : '-'}</td>`;
+        tablaResumen.appendChild(tr);
+      });
+    }
+
+    // ----------------- Utilities -----------------
+    function resetUI() {
+      tablaEjecucion.innerHTML = '';
+      tablaResumen.innerHTML = '';
+      ganttContainer.innerHTML = '';
+      simulacionDiv.classList.add('hidden');
+      placeHolder.classList.remove('hidden');
+      estadoLabel.textContent = 'Inactivo';
+      tiempoLabel.textContent = 't = 0';
+      colaRR.textContent = '-';
+      cpuRR.textContent = '-';
+    }
+
+    const esperar = ms => new Promise(r => setTimeout(r, ms));
+
+    // init defaults
+    renderProcesos();
+    resetUI();
+  </script>
+</body>
+</html>
