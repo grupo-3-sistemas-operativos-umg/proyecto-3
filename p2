@@ -1,0 +1,31 @@
+<script>
+    // --- Estado ---
+    const procesos = []; // original processes as added by user
+    let schedule = []; // array of {time, proceso, cola}
+    let running = false;
+    let stopRequested = false;
+    const UNIT_MS = 3000;
+
+    // --- DOM ---
+    const tablaProcesos = document.getElementById('tablaProcesos');
+    const tablaEjecucion = document.getElementById('tablaEjecucion');
+    const tablaResumen = document.getElementById('tablaResumen');
+    const simulacionDiv = document.getElementById('simulacion');
+    const placeHolder = document.getElementById('placeHolder');
+    const estadoLabel = document.getElementById('estado');
+    const tiempoLabel = document.getElementById('tiempoActual');
+    const colaRR = document.getElementById('colaRR');
+    const cpuRR = document.getElementById('cpuRR');
+    const modoLabel = document.getElementById('modoLabel');
+    const ganttContainer = document.getElementById('ganttContainer');
+
+    // --- controles ---
+    const agregarBtn = document.getElementById('agregar');
+    const limpiarBtn = document.getElementById('limpiar');
+    const iniciarBtn = document.getElementById('iniciar');
+    const detenerBtn = document.getElementById('detener');
+    const algoritmoSelect = document.getElementById('algoritmo');
+    const quantumInput = document.getElementById('quantum');
+    const backgroundModeInput = document.getElementById('backgroundMode');
+    const autoReuseInput = document.getElementById('autoReuse');
+    const helpBtn = document.getElementById('helpBtn');
