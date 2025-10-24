@@ -227,3 +227,86 @@
     const backgroundModeInput = document.getElementById('backgroundMode');
     const autoReuseInput = document.getElementById('autoReuse');
     const helpBtn = document.getElementById('helpBtn');
+
+   // helpers
+    function renderProcesos() {
+      tablaProcesos.innerHTML = '';
+      procesos.forEach((p, i) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td class="p-2 border-t border-gray-800">${p.nombre}</td>
+                        <td class="p-2 border-t border-gray-800">${p.llegada}</td>
+                        <td class="p-2 border-t border-gray-800">${p.duracion}</td>`;
+        tablaProcesos.appendChild(tr);
+      });
+    }
+
+    agregarBtn.addEventListener('click', () => {
+      const nombre = document.getElementById('nombre').value.trim();
+      const llegada = parseInt(document.getElementById('llegada').value, 10);
+      const duracion = parseInt(document.getElementById('duracion').value, 10);
+      if (!nombre || isNaN(llegada) || isNaN(duracion) || llegada < 0 || duracion <= 0) return alert('Datos inválidos');
+      // avoid duplicate names: add suffix if exists
+      let name = nombre;
+      let idx = 1;
+      while (procesos.some(p => p.nombre === name)) { name = nombre + '_' + idx; idx++; }
+      procesos.push({ nombre: name, llegada, duracion, restante: duracion });
+      renderProcesos();
+      document.getElementById('nombre').value = '';
+      document.getElementById('llegada').value = '';
+      document.getElementById('duracion').value = '';
+    });
+
+    limpiarBtn.addEventListener('click', () => {
+      if (running) return alert('Detén la simulación antes de limpiar.');
+      procesos.length = 0;
+      renderProcesos();
+      resetUI();
+    });
+
+    algoritmoSelect.addEventListener('change', (e) => {
+      quantumInput.classList.toggle('hidden', e.target.value !== 'rr');
+    });
+
+    helpBtn.addEventListener('click', () => {
+      alert('Instrucciones:\n1) Agrega procesos con Nombre, Llegada y Duración.\n2) Selecciona algoritmo.\n3) Si usas RR, define Quantum.\n4) Activa "Modo compacto" para vista resumida.\n5) Inicia. Cada unidad visual = 3s.');
+    });
+
+    detenerBtn.addEventListener('click', () => {
+      stopRequested = true;
+    });
+
+    iniciarBtn.addEventListener('click', async () => {
+      if (procesos.length === 0) return alert('Agrega procesos primero.');
+      if (running) return alert('Simulación en curso. Detén antes de iniciar otra.');
+      stopRequested = false;
+      running = true;
+      tablaEjecucion.innerHTML = '';
+      tablaResumen.innerHTML = '';
+      placeHolder.classList.add('hidden');
+      simulacionDiv.classList.remove('hidden');
+
+      const algoritmo = algoritmoSelect.value;
+      const quantum = parseInt(quantumInput.value, 10) || 1;
+      const compact = backgroundModeInput.checked;
+      modoLabel.textContent = compact ? 'Compacto' : 'Paso a paso';
+
+      // copiar procesos para no mutar original (pero manteniendo nombre/llegada/duracion)
+      const procCopy = procesos.map(p => ({ ...p, restante: p.duracion }));
+
+      if (algoritmo === 'fcfs') schedule = planificarFCFS(procCopy);
+      if (algoritmo === 'sjf') schedule = planificarSJF(procCopy);
+      if (algoritmo === 'rr') schedule = planificarRR(procCopy, quantum);
+
+      // crear gráfico Gantt con columnas = plan length
+      crearGantt(planToLength(schedule), procesos);
+
+      await ejecutarSimulacion(schedule, { compact });
+
+      if (!autoReuseInput.checked) {
+        // reset remaining durations to original
+        procesos.forEach(p => p.restante = p.duracion);
+      }
+
+      running = false;
+      stopRequested = false;
+    });
