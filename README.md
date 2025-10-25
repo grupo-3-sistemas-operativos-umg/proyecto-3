@@ -9,17 +9,17 @@
 
 # Manual de usuario
 
-Este proyecto simula cómo un sistema operativo gestiona varios procesos usando distintos algoritmos de planificación:
+El proyecto simula cómo un sistema operativo gestiona varios procesos usando distintos algoritmos de planificación:
 
 * FCFS (First Come, First Served) → El primero que llega es el primero en ejecutarse.
 
 * SJF (Shortest Job First) → El proceso con menor tiempo requerido se ejecuta primero.
 
-* SRTF (Shortest Remaining Time First) → Variante expropiativa de SJF, siempre se ejecuta el que tenga menos tiempo restante.
-
 * Round Robin → Cada proceso obtiene un turno de CPU con duración igual al quantum. Cuando se le acaba, si aún no terminó, vuelve a la cola.
 
 El programa automatiza el trabajo del planificador: recibe procesos como entrada, aplica el algoritmo elegido y  muestra cómo se van ejecutando hasta que todos terminan.
+
+<img width="1363" height="692" alt="image" src="https://github.com/user-attachments/assets/f198a892-6f56-4cce-bb15-dc5f41edb3c1" />
 
 ## Tecnologías Utilizadas
 
