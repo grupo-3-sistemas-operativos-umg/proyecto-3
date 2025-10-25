@@ -5,7 +5,7 @@
 * Danny Emanuel Tiu - 1990-22-10522
 * Luis René López Hernández - 1990-20-11078
 * Willy David Tejax. - 1990-22-12652
-* Wilson Armando Felipe 1990-18-71148
+* Wilson Armando Felipe 1990-18-7148
 
 # Manual de usuario
 El proyecto simula cómo un sistema operativo gestiona varios procesos usando distintos algoritmos de planificación:
